@@ -1,0 +1,51 @@
+def credId = "apollo_ssh_key"
+
+Jenkins.instance.getAllItems(Item.class).each { item ->
+    try {
+        def xml = new XmlSlurper().parseText(item.configFile.asString())
+        def fullXml = item.configFile.asString()
+        
+        if (!fullXml.contains(credId)) return
+        
+        println("=== ${item.fullName} ===")
+        
+        // SCM checkout (Git plugin)
+        xml.'**'.findAll { it.name() == 'credentialsId' && it.text() == credId }.each {
+            def parent = it.parent()
+            println("  [SCM] Git checkout - remote: ${parent.url ?: 'unknown'}")
+        }
+        
+        // withCredentials / credential bindings
+        xml.'**'.findAll { it.name() == 'credentialsId' && it.text() == credId }.each {
+            def grandparent = it.parent()?.parent()
+            if (grandparent?.name()?.contains('Binding') || grandparent?.name()?.contains('binding')) {
+                println("  [withCredentials] binding type: ${grandparent.name()}")
+            }
+        }
+        
+        // SSH Agent plugin
+        xml.'**'.findAll { it.name() == 'sshAgentCredentials' }.each { block ->
+            if (block.text().contains(credId)) {
+                println("  [SSH Agent] injected as SSH agent")
+            }
+        }
+        
+        // Username/password environment injection
+        xml.'**'.findAll { it.name() == 'usernamePasswordBinding' }.each { block ->
+            if (block.text().contains(credId)) {
+                println("  [Env Binding] username+password injected as env vars")
+                println("    usernameVar: ${block.usernameVariable} passwordVar: ${block.passwordVariable}")
+            }
+        }
+        
+        // Pipeline SCM (Jenkinsfile from SCM)
+        xml.'**'.findAll { it.name() == 'scriptPath' }.each {
+            def scmBlock = it.parent()
+            if (scmBlock.text().contains(credId)) {
+                println("  [Pipeline SCM] used to fetch Jenkinsfile itself")
+            }
+        }
+        
+        println("")
+    } catch(e) {}
+}
